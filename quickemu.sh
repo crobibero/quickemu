@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
 
-# Usage:
-#  - sudo apt install qemu qemu-kvm libvirt-clients libvirt-daemon bridge-utils samba ovmf
-#  - sudo apt install libvirt-bin # on 18.04
-#  - sudo adduser ${SUDO_USER} kvm
-#  - Download an ISO image
-#  - Your home directory on the host will be available via samba on the guest VM via smb://10.0.2.4/qemu
-
 LAUNCHER=$(basename $0 .sh)
 allcores=$(nproc --all)
 if [ ${allcores} -ge 8 ]; then
@@ -105,7 +98,10 @@ function usage() {
   echo
   echo "You can also pass optional parameters"
   echo "  --delete   : Delete the disk image."
+  echo "  --efi      : Enable EFI BIOS (default)."
+  echo "  --legacy   : Enable legacy BIOS."
   echo "  --restore  : Restore the snapshot."
+  echo "  --samba    : Share your home directory to the guest."
   echo "  --snapshot : Create a disk snapshot."
   echo "  --virgil   : Use virgil, if available."
   exit 1
@@ -115,7 +111,7 @@ BIOS="-bios /usr/share/qemu/OVMF.fd"
 DELETE=0
 ENGINE="system-x86_64"
 RESTORE=0
-SAMBA=",smb=${HOME}"
+SAMBA=""
 SNAPSHOT=0
 VM=""
 
@@ -131,7 +127,16 @@ while [ $# -gt 0 ]; do
       BIOS=""
       shift;;
     -restore|--restore)
-      SNAPSHOT=1
+      RESTORE=1
+      shift;;
+    -samba|--samba)
+      TEST_SMBD=$(which smbd)
+      if [ $? -eq 0 ]; then
+        SAMBA=",smb=${HOME}"
+        echo "NOTE! ${HOME} will be available on the guest via smb://10.0.2.4/qemu"
+      else
+        echo "WARNING! Requested sharing %{HOME} via samba. 'smbd' not found."
+      fi
       shift;;
     -snapshot|--snapshot)
       SNAPSHOT=1
