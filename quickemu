@@ -202,10 +202,18 @@ function vm_boot() {
   else
     echo " - Display:  ${xres}x${yres}"
   fi
+  
+  if [ "${VIDEO_DRV}" == "qxl" ]; then
+    echo " - Video:    QXL"
+    local VIDEO_DEV=" -vga ${VIDEO_DRV}"
+    VIRGL="off"
+  else
+    echo " - Video:    VirtIO-VGA"
+    local VIDEO_DEV="-device ${VIDEO_DRV},virgl=${VIRGL},xres=${xres},yres=${yres}"
+  fi
   echo " - GL:       ${GL}"
   echo " - Virgil3D: ${VIRGL}"
   echo " - Output:   ${UI^^}"
-
 
   # Set the hostname of the VM
   local NET="user,hostname=${VMNAME}"
@@ -238,19 +246,21 @@ function vm_boot() {
     -enable-kvm \
     -machine q35,accel=kvm \
     -cpu host,kvm=on \
-    -m ${ram} \
     -smp ${cores} \
+    -m ${ram} \
+    -device virtio-balloon \
     -netdev ${NET},id=nic \
     -device virtio-net,netdev=nic \
     -rtc base=localtime,clock=host \
     -serial mon:stdio \
-    -audiodev pa,id=pa,server=unix:$XDG_RUNTIME_DIR/pulse/native,out.stream-name=${LAUNCHER}-${VMNAME},in.stream-name=${LAUNCHER}-${VMNAME} \
+    -audiodev pa,id=pa,server=unix:${XDG_RUNTIME_DIR}/pulse/native,out.stream-name=${LAUNCHER}-${VMNAME},in.stream-name=${LAUNCHER}-${VMNAME} \
     -device intel-hda -device hda-duplex,audiodev=pa \
     -device qemu-xhci,id=xhci,p2=8,p3=8 -device usb-kbd -device usb-tablet \
     -object rng-random,id=rng0,filename=/dev/urandom \
     -device virtio-rng-pci,rng=rng0 \
-    -device virtio-vga,virgl=${VIRGL},xres=${xres},yres=${yres} \
-    -display ${UI},gl=${GL} ${STATUSQUO} \
+    ${VIDEO_DEV} \
+    -display ${UI},gl=${GL} \
+    ${STATUSQUO} \
     "$@"
 }
 
