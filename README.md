@@ -37,6 +37,7 @@ and `qemu-virgil`  on the [Snap Store page for qemu-virgil](https://snapcraft.io
 ```bash
 snap install qemu-virgil --edge
 snap connect qemu-virgil:kvm
+snap connect qemu-virgil:raw-usb
 snap connect qemu-virgil:removable-media
 ```
 
@@ -46,11 +47,16 @@ snap connect qemu-virgil:removable-media
 
   * Download a .iso image of a Linux distribution
   * Create a VM configuration file; for example `ubuntu.conf`
+    * The **default** `guest_os` is `linux`, so this is optional for Linux VM configs.
+    * The `boot` option enables Legacy BIOS (`legacy`) or EFI (`efi`) booting. `legacy` is the default.
 
 ```
+boot="legacy"
+guest_os="linux"
 iso="/media/$USER/Quickemu/ubuntu/focal-desktop-amd64.iso"
 disk_img="/media/$USER/Quickemu/ubuntu/focal-desktop-amd64.qcow2"
 disk=128G
+usb_devices=("046d:082d" "046d:085e")
 ```
 
   * Use `quickemu` to start the virtual machine:
@@ -64,18 +70,23 @@ Which will output something like this:
 ```
 Starting /media/martin/Quickemu/ubuntu-focal-desktop.conf
  - QEMU:     /snap/bin/qemu-virgil v4.2.0
- - BIOS:     Legacy
+ - Guest:    Linux optimised
+ - BIOS:     Legacy BIOS
  - Disk:     /media/martin/Quickemu/ubuntu/focal-desktop-amd64.qcow2 (64G)
  - ISO:      /media/martin/Quickemu/ubuntu/focal-desktop-amd64.iso
  - CPU:      4 Core(s)
  - RAM:      4G
- - Display:  1664x936
- - Video:    VirtIO-VGA
- - GL:       on
- - Virgil3D: on
- - Output:   SDL
+ - Screen:   1664x936
+ - Video:    virtio-vga
+ - GL:       ON
+ - Virgil3D: ON
+ - Display:  SDL
  - smbd:     /home/martin will be exported to the guest via smb://10.0.2.4/qemu
  - ssh:      22221/tcp is connected. Login via 'ssh user@localhost -p 22221'
+ - USB:      Device pass-through requested:
+              - Logitech, Inc. HD Pro Webcam C920
+              - Logitech, Inc. Logitech BRIO
+             Requested USB device(s) are accessible.
 ```
 
   * Complete the installation as normal.
@@ -87,13 +98,17 @@ You can use `quickemu` to run a Windows 10 virtual machine.
   * [Download Windows 10](https://www.microsoft.com/en-gb/software-download/windows10ISO)
   * [Download VirtIO drivers for Windows](https://docs.fedoraproject.org/en-US/quick-docs/creating-windows-virtual-machines-using-virtio-drivers/index.html#virtio-win-direct-downloads)
   * Create a VM configuration file; for example `windows10.conf`
-    * The `VIDEO_DRV=qxl` line instructs `quickemu` to use a Windows compatible video driver.
+    * The `boot` option enables Legacy BIOS (`legacy`) or EFI (`efi`) booting. `legacy` is the default.
+    * The `guest_os="windows"` line instructs `quickemu` to use optimise for Windows.
 
 ```
+boot="legacy"
+guest_os="windows"
 iso="/media/$USER/Quickemu/windows10/Win10_1909_English_x64.iso"
 driver_iso="/media/$USER/Quickemu/windows10/virtio-win-0.1.173.iso"
 disk_img="/media/$USER/Quickemu/windows10/windows10.qcow2"
-VIDEO_DRV="qxl"
+disk=128G
+usb_devices=("046d:082d" "046d:085e")
 ```
 
   * Use `quickemu` to start the virtual machine:
@@ -107,20 +122,25 @@ Which will output something like this:
 ```
 Starting /media/martin/Quickemu/windows10.conf
  - QEMU:     /snap/bin/qemu-virgil v4.2.0
- - BIOS:     Legacy
+ - Guest:    Windows optimised
+ - BIOS:     Legacy BIOS
  - Disk:     /media/martin/Quickemu/windows10/windows10.qcow2 (64G)
              Just created, booting from /media/martin/Quickemu/windows10/Win10_1909_English_x64.iso
  - Boot:     /media/martin/Quickemu/windows10/Win10_1909_English_x64.iso
  - Drivers:  /media/martin/Quickemu/windows10/virtio-win-0.1.173.iso
  - CPU:      4 Core(s)
  - RAM:      4G
- - Display:  1664x936
- - Video:    QXL
- - GL:       on
- - Virgil3D: off
- - Output:   SDL
+ - Screen:   1664x936
+ - Video:    qxl-vga
+ - GL:       ON
+ - Virgil3D: OFF
+ - Display:  SDL
  - smbd:     /home/martin will be exported to the guest via smb://10.0.2.4/qemu
  - ssh:      22221/tcp is connected. Login via 'ssh user@localhost -p 22221'
+ - USB:      Device pass-through requested:
+              - Logitech, Inc. HD Pro Webcam C920
+              - Logitech, Inc. Logitech BRIO
+             Requested USB device(s) are accessible.
 ```
 
   * During the Windows 10 install you will be asked *"Where do you want to install Windows?"*
@@ -140,7 +160,6 @@ Usage
 
 You can also pass optional parameters
   --delete                : Delete the disk image.
-  --efi                   : Enable EFI BIOS.
   --snapshot apply <tag>  : Apply/restore a snapshot.
   --snapshot create <tag> : Create a snapshot.
   --snapshot delete <tag> : Delete a snapshot.
@@ -150,11 +169,13 @@ You can also pass optional parameters
 
 ## TODO
 
-  - [x] Make display configuration more robust
-  - [x] Improve stdout presentation
-  - [x] Make disk image optionally size configurable
-  - [x] Improve snapshot management
   - [ ] Create desktop launcher for a VM
+  - [ ] Improve disk management
+  - [x] Add USB pass-through support
   - [x] Fix Virgil 3D on EFI boot
-  - [x] Get QEMU `-audiodev` working for audio input, something like:
   - [x] Add Windows support
+  - [x] Get QEMU `-audiodev` working for audio input
+  - [x] Make display configuration more robust
+  - [x] Improve snapshot management
+  - [x] Improve stdout presentation
+  - [x] Make disk image size configurable

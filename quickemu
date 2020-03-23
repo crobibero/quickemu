@@ -11,18 +11,18 @@ function disk_delete() {
 }
 
 function snapshot_apply() {
-  local snapshot_tag="${1}"
-  if [ -z "${snapshot_tag}" ]; then
+  local TAG="${1}"
+  if [ -z "${TAG}" ]; then
     echo "ERROR! No snapshot tag provided."
     exit
   fi
 
   if [ -e "${disk_img}" ]; then
-    ${QEMU_IMG} snapshot -q -a "${snapshot_tag}" "${disk_img}"
+    ${QEMU_IMG} snapshot -q -a "${TAG}" "${disk_img}"
     if [ $? -eq 0 ]; then
-      echo "SUCCESS! Applied snapshot ${snapshot_tag} to ${disk_img}"
+      echo "SUCCESS! Applied snapshot ${TAG} to ${disk_img}"
     else
-      echo "ERROR! Failed to apply snapshot ${snapshot_id} to ${disk_img}"
+      echo "ERROR! Failed to apply snapshot ${TAG} to ${disk_img}"
     fi
   else
     echo "NOTE! ${disk_img} not found. Doing nothing."
@@ -30,18 +30,18 @@ function snapshot_apply() {
 }
 
 function snapshot_create() {
-  local snapshot_tag="${1}"
-  if [ -z "${snapshot_tag}" ]; then
+  local TAG="${1}"
+  if [ -z "${TAG}" ]; then
     echo "ERROR! No snapshot tag provided."
     exit
   fi
 
   if [ -e "${disk_img}" ]; then
-    ${QEMU_IMG} snapshot -q -c "${snapshot_tag}" "${disk_img}"
+    ${QEMU_IMG} snapshot -q -c "${TAG}" "${disk_img}"
     if [ $? -eq 0 ]; then
-      echo "SUCCESS! Created snapshot ${snapshot_tag} of ${disk_img}"
+      echo "SUCCESS! Created snapshot ${TAG} of ${disk_img}"
     else
-      echo "ERROR! Failed to create snapshot ${snapshot_tag} of ${disk_img}"
+      echo "ERROR! Failed to create snapshot ${TAG} of ${disk_img}"
     fi
   else
     echo "NOTE! ${disk_img} not found. Doing nothing."
@@ -49,18 +49,18 @@ function snapshot_create() {
 }
 
 function snapshot_delete() {
-  local snapshot_tag="${1}"
-  if [ -z "${snapshot_tag}" ]; then
+  local TAG="${1}"
+  if [ -z "${TAG}" ]; then
     echo "ERROR! No snapshot tag provided."
     exit
   fi
 
   if [ -e "${disk_img}" ]; then
-    ${QEMU_IMG} snapshot -q -d "${snapshot_tag}" "${disk_img}"
+    ${QEMU_IMG} snapshot -q -d "${TAG}" "${disk_img}"
     if [ $? -eq 0 ]; then
-      echo "SUCCESS! Deleted snapshot ${snapshot_tag} of ${disk_img}"
+      echo "SUCCESS! Deleted snapshot ${TAG} of ${disk_img}"
     else
-      echo "ERROR! Failed to delete snapshot ${snapshot_tag} of ${disk_img}"
+      echo "ERROR! Failed to delete snapshot ${TAG} of ${disk_img}"
     fi
   else
     echo "NOTE! ${disk_img} not found. Doing nothing."
@@ -86,56 +86,137 @@ function get_port() {
     done
 }
 
+enable_usb_passthrough() {
+  local DEVICE=""
+  local USB_BUS=""
+  local USB_DEV=""
+  local USB_NAME=""
+  local VENDOR_ID=""
+  local PRODUCT_ID=""
+  local TEMP_SCRIPT=$(mktemp)
+  local EXEC_SCRIPT=0
+
+  # Have any USB devices been requested for pass-through?
+  if (( ${#usb_devices[@]} )); then
+    echo " - USB:      Device pass-through requested:"
+    echo "#!/usr/bin/env bash" > "${TEMP_SCRIPT}"
+    for DEVICE in "${usb_devices[@]}"; do
+      VENDOR_ID=$(echo ${DEVICE} | cut -d':' -f1)
+      PRODUCT_ID=$(echo ${DEVICE} | cut -d':' -f2)
+      USB_BUS=$(lsusb -d ${VENDOR_ID}:${PRODUCT_ID} | cut -d' ' -f2)
+      USB_DEV=$(lsusb -d ${VENDOR_ID}:${PRODUCT_ID} | cut -d' ' -f4 | cut -d':' -f1)
+      USB_NAME=$(lsusb -d ${VENDOR_ID}:${PRODUCT_ID} | cut -d' ' -f7-)
+      echo "              - ${USB_NAME}"
+      USB_PASSTHROUGH="${USB_PASSTHROUGH} -usb -device usb-host,vendorid=0x${VENDOR_ID},productid=0x${PRODUCT_ID}"
+      
+      if [ ! -w /dev/bus/usb/${USB_BUS}/${USB_DEV} ]; then
+        local EXEC_SCRIPT=1
+        echo "chown root:${USER} /dev/bus/usb/${USB_BUS}/${USB_DEV}" >> "${TEMP_SCRIPT}"
+      fi
+    done
+
+    if [ ${EXEC_SCRIPT} -eq 1 ]; then
+      chmod +x "${TEMP_SCRIPT}"
+      echo "             Requested USB device(s) are NOT accessible."
+      echo "             ${TEMP_SCRIPT} will be executed to enable access:"
+      echo
+      cat ${TEMP_SCRIPT}
+      echo
+      sudo "${TEMP_SCRIPT}"
+      if [ $? -ne 0 ]; then
+        echo "            WARNING! Enabling USB device access failed."
+      fi
+    else
+      echo "             Requested USB device(s) are accessible."
+    fi
+    rm -f "${TEMP_SCRIPT}"
+  fi
+}
+
 function vm_boot() {
-  local VMNAME=$(basename ${VM} .conf)
-  local VMDIR=$(dirname ${disk_img})
-  local BIOS=""
+  local VMNAME=$(basename "${VM}" .conf)
+  local VMDIR=$(dirname "${disk_img}")
+  local CPU="-cpu host,kvm=on"
+  local GUEST_TWEAKS=""
+  local DISPLAY_DEVICE=""
+  local VIDEO=""
   local GL="on"
   local VIRGL="on"
-  local UI="sdl"
+  local OUTPUT="sdl"
+  local OUTPUT_EXTRA=""
   local QEMU_VER=$(${QEMU} -version | head -n1 | cut -d' ' -f4 | cut -d'(' -f1)
   echo "Starting ${VM}"
   echo " - QEMU:     ${QEMU} v${QEMU_VER}"
 
-  readonly disk_min_size=$((197632 * 8))
-  if [ -z "${disk}" ]; then
-    disk="64G"
+  # Force to lowercase.
+  boot=$(echo ${boot,,})
+  if [ "${boot}" == "efi" ] || [ "${boot}" == "uefi" ]; then
+    if [ -e "${VIRGIL_PATH}/usr/share/qemu/edk2-x86_64-code.fd" ] ; then
+      local EFI_CODE="${VIRGIL_PATH}/usr/share/qemu/edk2-x86_64-code.fd"
+      local EFI_VARS="${VMDIR}/${VMNAME}-vars.fd"
+      if [ ! -e "${EFI_VARS}" ]; then
+        cp "${VIRGIL_PATH}/usr/share/qemu/edk2-i386-vars.fd" "${EFI_VARS}"
+      fi
+      echo " - BOOT:     EFI"
+    else
+      echo " - BOOT:     Legacy BIOS"
+      echo " -           EFI Booting requested but no EFI firmware found."
+    fi
+  else
+    echo " - BOOT:     Legacy BIOS"
   fi
 
-  if [ ${ENABLE_EFI} -eq 1 ]; then
-    if [ -e /snap/qemu-virgil/current/usr/share/qemu/edk2-x86_64-code.fd ] ; then
-      if [ ! -e ${VMDIR}/${VMNAME}-vars.fd ]; then
-        cp /snap/qemu-virgil/current/usr/share/qemu/edk2-i386-vars.fd ${VMDIR}/${VMNAME}-vars.fd
-      fi
-      BIOS="-drive if=pflash,format=raw,readonly,file=/snap/qemu-virgil/current/usr/share/qemu/edk2-x86_64-code.fd -drive if=pflash,format=raw,file=${VMDIR}/${VMNAME}-vars.fd"
-    else
-      echo " - EFI:      Booting requested but no EFI firmware found."
-      echo "             Booting from Legacy BIOS."
-    fi
-    echo " - BIOS:     EFI"
-  else
-    echo " - BIOS:     Legacy"
-  fi
+  # Force to lowercase.
+  guest_os=$(echo ${guest_os,,})
+  # Make any OS specific adjustments
+  case ${guest_os} in
+    linux)
+      DISPLAY_DEVICE="virtio-vga"
+      ;;
+    windows)
+      CPU="${CPU},hv_time"
+      GUEST_TWEAKS="-no-hpet"
+      DISPLAY_DEVICE="qxl-vga"
+      ;;
+    *)
+      echo "ERROR! Unrecognised guest OS: ${guest_os}"
+      exit
+      ;;
+  esac
+  echo " - Guest:    ${guest_os^} optimised"
 
   echo " - Disk:     ${disk_img} (${disk})"
   if [ ! -f "${disk_img}" ]; then
-    # If there is no disk image, create a new image.
+      # If there is no disk image, create a new image.
+      mkdir -p "${VMDIR}" 2>/dev/null
       ${QEMU_IMG} create -q -f qcow2 "${disk_img}" "${disk}"
+      if [ $? -ne 0 ]; then
+        echo "ERROR! Failed to create ${disk_img}"
+        exit 1
+      fi
+      if [ -z "${iso}" ]; then
+        echo "ERROR! You haven't specified a .iso image to boot from."
+        exit 1
+      fi
       echo "             Just created, booting from ${iso}"
     if [ $? -ne 0 ]; then
       echo "ERROR! Failed to create ${disk_img} of ${disk}. Stopping here."
       exit 1
     fi
-  elif [ -e ${disk_img} ]; then
+  elif [ -e "${disk_img}" ]; then
     # Check there isn't already a process attached to the disk image.
-    QEMU_LOCK_TEST=$(${QEMU_IMG} info ${disk_img} 2>/dev/null)
+    QEMU_LOCK_TEST=$(${QEMU_IMG} info "${disk_img}" 2>/dev/null)
     if [ $? -ne 0 ]; then
       echo "             Failed to get "write" lock. Is another process using the disk?"
       exit 1
     else
-      disk_curr_size=$(stat -c%s "${disk_img}")
-      if [ ${disk_curr_size} -le ${disk_min_size} ]; then
+      DISK_CURR_SIZE=$(stat -c%s "${disk_img}")
+      if [ ${DISK_CURR_SIZE} -le ${DISK_MIN_SIZE} ]; then
         echo "             Looks unused, booting from ${iso}"
+        if [ -z "${iso}" ]; then
+          echo "ERROR! You haven't specified a .iso image to boot from."
+          exit 1
+        fi
       else
         # If there is a disk image, that appears to have an install
         # then do not boot from the iso
@@ -145,81 +226,83 @@ function vm_boot() {
   fi
 
   # Has the status quo been requested?
-  if [ "${STATUSQUO}" == "-snapshot" ] &&  [ -z "${iso}" ]; then
+  if [ "${STATUS_QUO}" == "-snapshot" ] &&  [ -z "${iso}" ]; then
     echo "             Existing disk state will be preserved, no writes will be committed."
   fi
 
   if [ -n "${iso}" ] && [ -e "${iso}" ]; then
-    local ISO_BOOT="-drive media=cdrom,file="${iso}",index=2"
     echo " - Boot:     ${iso}"
   fi
 
   if [ -n "${driver_iso}" ] && [ -e "${driver_iso}" ]; then
-    local ISO_DRIVER="-drive media=cdrom,file="${driver_iso}",index=3"
     echo " - Drivers:  ${driver_iso}"
   fi
 
-  local cores="1"
-  local allcores=$(nproc --all)
-  if [ ${allcores} -ge 8 ]; then
-    cores="4"
-  elif [ ${allcores} -ge 4 ]; then
-    cores="2"
+  local CORES_VM="1"
+  local CORES_HOST=$(nproc --all)
+  if [ ${CORES_HOST} -ge 8 ]; then
+    CORES_VM="4"
+  elif [ ${CORES_HOST} -ge 4 ]; then
+    CORES_VM="2"
   fi
-  echo " - CPU:      ${cores} Core(s)"
+  echo " - CPU:      ${CORES_VM} Core(s)"
 
-  local ram="2G"
-  local allram=$(free --mega -h | grep Mem | cut -d':' -f2 | cut -d'G' -f1 | sed 's/ //g')
-  if [ ${allram} -ge 64 ]; then
-    ram="4G"
-  elif [ ${allram} -ge 16 ]; then
-    ram="3G"
+  local RAM_VM="2G"
+  local RAM_HOST=$(free --mega -h | grep Mem | cut -d':' -f2 | cut -d'G' -f1 | sed 's/ //g')
+  #Round up - https://github.com/wimpysworld/quickemu/issues/11
+  RAM_HOST=$(printf '%.*f\n' 0 ${RAM_HOST})
+  if [ ${RAM_HOST} -ge 64 ]; then
+    RAM_VM="4G"
+  elif [ ${RAM_HOST} -ge 16 ]; then
+    RAM_VM="3G"
   fi
-  echo " - RAM:      ${ram}"
+  echo " - RAM:      ${RAM_VM}"
 
-  local xres=1152
-  local yres=648
+  local X_RES=1152
+  local Y_RES=648
   if [ "${XDG_SESSION_TYPE}" == "x11" ]; then
     local LOWEST_WIDTH=$(xrandr --listmonitors | grep -v Monitors | cut -d' ' -f4 | cut -d'/' -f1 | sort | head -n1)
     if [ ${LOWEST_WIDTH} -ge 3840 ]; then
-      xres=3200
-      yres=1800
+      X_RES=3200
+      Y_RES=1800
     elif [ ${LOWEST_WIDTH} -ge 2560 ]; then
-      xres=2048
-      yres=1152
+      X_RES=2048
+      Y_RES=1152
     elif [ ${LOWEST_WIDTH} -ge 1920 ]; then
-      xres=1664
-      yres=936
+      X_RES=1664
+      Y_RES=936
     elif [ ${LOWEST_WIDTH} -ge 1280 ]; then
-      xres=1152
-      yres=648
+      X_RES=1152
+      Y_RES=648
     fi
   fi
 
   # GL is not working with GTK currently
-  if [ "${UI}" == "gtk" ]; then
-    GL="off"
+  if [ "${OUTPUT}" == "gtk" ]; then
+    GL="es"
+    OUTPUT_EXTRA=",grab-on-hover=on,zoom-to-fit=on"
   else
-    echo " - Display:  ${xres}x${yres}"
+    echo " - Screen:   ${X_RES}x${Y_RES}"
   fi
-  
-  if [ "${VIDEO_DRV}" == "qxl" ]; then
-    echo " - Video:    QXL"
-    local VIDEO_DEV=" -vga ${VIDEO_DRV}"
-    VIRGL="off"
+
+  if [ "${DISPLAY_DEVICE}" == "qxl-vga" ]; then
+    VIDEO="-device ${DISPLAY_DEVICE},xres=${X_RES},yres=${Y_RES}"
+  elif [ "${DISPLAY_DEVICE}" == "virtio-vga" ]; then
+    VIDEO="-device ${DISPLAY_DEVICE},virgl=${VIRGL},xres=${X_RES},yres=${Y_RES}"
   else
-    echo " - Video:    VirtIO-VGA"
-    local VIDEO_DEV="-device ${VIDEO_DRV},virgl=${VIRGL},xres=${xres},yres=${yres}"
+    VIDEO=" -device VGA,vgamem_mb=32,xres=${X_RES},yres=${Y_RES}"
   fi
-  echo " - GL:       ${GL}"
-  echo " - Virgil3D: ${VIRGL}"
-  echo " - Output:   ${UI^^}"
+
+  echo " - Video:    ${DISPLAY_DEVICE}"
+  echo " - GL:       ${GL^^}"
+  echo " - Virgil3D: ${VIRGL^^}"
+  echo " - Display:  ${OUTPUT^^}"
 
   # Set the hostname of the VM
   local NET="user,hostname=${VMNAME}"
 
   # If smbd is available, export $HOME to the guest via samba
-  if [ -e /snap/qemu-virgil/current/usr/sbin/smbd ]; then
+  if [ -e "${VIRGIL_PATH}/usr/sbin/smbd" ]; then
       NET="${NET},smb=${HOME}"
   fi
 
@@ -238,30 +321,60 @@ function vm_boot() {
     echo " - ssh:      All ports for exposing ssh have been exhausted."
   fi
 
+  enable_usb_passthrough
+
   # Boot the iso image
-  ${QEMU} -name ${VMNAME},process=${VMNAME} \
-    ${BIOS} \
-    -drive id=disk,file=${disk_img},format=qcow2,if=virtio,aio=native,cache.direct=on \
-    ${ISO_BOOT} ${ISO_DRIVER} \
-    -enable-kvm \
-    -machine q35,accel=kvm \
-    -cpu host,kvm=on \
-    -smp ${cores} \
-    -m ${ram} \
-    -device virtio-balloon \
-    -netdev ${NET},id=nic \
-    -device virtio-net,netdev=nic \
-    -rtc base=localtime,clock=host \
-    -serial mon:stdio \
-    -audiodev pa,id=pa,server=unix:${XDG_RUNTIME_DIR}/pulse/native,out.stream-name=${LAUNCHER}-${VMNAME},in.stream-name=${LAUNCHER}-${VMNAME} \
-    -device intel-hda -device hda-duplex,audiodev=pa \
-    -device qemu-xhci,id=xhci,p2=8,p3=8 -device usb-kbd -device usb-tablet \
-    -object rng-random,id=rng0,filename=/dev/urandom \
-    -device virtio-rng-pci,rng=rng0 \
-    ${VIDEO_DEV} \
-    -display ${UI},gl=${GL} \
-    ${STATUSQUO} \
-    "$@"
+  if [ "${boot}" == "efi" ] || [ "${boot}" == "uefi" ]; then
+    ${QEMU} \
+      -name ${VMNAME},process=${VMNAME} \
+      -enable-kvm -machine q35 ${GUEST_TWEAKS} \
+      ${CPU} -smp ${CORES_VM} \
+      -m ${RAM_VM} -device virtio-balloon \
+      -drive if=pflash,format=raw,readonly,file="${EFI_CODE}" \
+      -drive if=pflash,format=raw,file="${EFI_VARS}" \
+      -drive media=cdrom,index=0,file="${iso}" \
+      -drive media=cdrom,index=1,file="${driver_iso}" \
+      -drive if=none,id=drive0,cache=directsync,aio=native,format=qcow2,file="${disk_img}" \
+      -device virtio-blk-pci,drive=drive0,scsi=off ${STATUS_QUO} \
+      ${VIDEO} -display ${OUTPUT},gl=${GL}${OUTPUT_EXTRA} \
+      -device qemu-xhci,id=xhci,p2=8,p3=8 -device usb-kbd,bus=xhci.0 -device usb-tablet,bus=xhci.0 ${USB_PASSTHROUGH} \
+      -device virtio-net,netdev=nic -netdev ${NET},id=nic \
+      -audiodev pa,id=pa,server=unix:${XDG_RUNTIME_DIR}/pulse/native,out.stream-name=${LAUNCHER}-${VMNAME},in.stream-name=${LAUNCHER}-${VMNAME} \
+      -device intel-hda -device hda-duplex,audiodev=pa,mixer=off \
+      -rtc base=localtime,clock=host \
+      -object rng-random,id=rng0,filename=/dev/urandom \
+      -device virtio-rng-pci,rng=rng0 \
+      -spice port=5930,disable-ticketing \
+      -device virtio-serial-pci \
+      -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 \
+      -chardev spicevmc,id=spicechannel0,name=vdagent \
+      -serial mon:stdio \
+      "${@}"
+  else
+    ${QEMU} \
+      -name ${VMNAME},process=${VMNAME} \
+      -enable-kvm -machine q35 ${GUEST_TWEAKS} \
+      ${CPU} -smp ${CORES_VM} \
+      -m ${RAM_VM} -device virtio-balloon \
+      -drive media=cdrom,index=0,file="${iso}" \
+      -drive media=cdrom,index=1,file="${driver_iso}" \
+      -drive if=none,id=drive0,cache=directsync,aio=native,format=qcow2,file="${disk_img}" \
+      -device virtio-blk-pci,drive=drive0,scsi=off ${STATUS_QUO} \
+      ${VIDEO} -display ${OUTPUT},gl=${GL}${OUTPUT_EXTRA} \
+      -device qemu-xhci,id=xhci,p2=8,p3=8 -device usb-kbd,bus=xhci.0 -device usb-tablet,bus=xhci.0 ${USB_PASSTHROUGH} \
+      -device virtio-net,netdev=nic -netdev ${NET},id=nic \
+      -audiodev pa,id=pa,server=unix:${XDG_RUNTIME_DIR}/pulse/native,out.stream-name=${LAUNCHER}-${VMNAME},in.stream-name=${LAUNCHER}-${VMNAME} \
+      -device intel-hda -device hda-duplex,audiodev=pa,mixer=off \
+      -rtc base=localtime,clock=host \
+      -object rng-random,id=rng0,filename=/dev/urandom \
+      -device virtio-rng-pci,rng=rng0 \
+      -spice port=5930,disable-ticketing \
+      -device virtio-serial-pci \
+      -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 \
+      -chardev spicevmc,id=spicechannel0,name=vdagent \
+      -serial mon:stdio \
+      "${@}"
+   fi
 }
 
 function usage() {
@@ -271,7 +384,6 @@ function usage() {
   echo
   echo "You can also pass optional parameters"
   echo "  --delete                : Delete the disk image."
-  echo "  --efi                   : Enable EFI BIOS."
   echo "  --snapshot apply <tag>  : Apply/restore a snapshot."
   echo "  --snapshot create <tag> : Create a snapshot."
   echo "  --snapshot delete <tag> : Delete a snapshot."
@@ -280,21 +392,31 @@ function usage() {
   exit 1
 }
 
+# Lowercase variables are used in the VM config file only
+boot="legacy"
+guest_os="linux"
+iso=""
+driver_iso=""
+disk_img=""
+disk="64G"
+usb_devices=()
+
 DELETE=0
 ENABLE_EFI=0
-readonly QEMU="/snap/bin/qemu-virgil"
-readonly QEMU_IMG="/snap/bin/qemu-virgil.qemu-img"
-readonly LAUNCHER=$(basename $0)
 SNAPSHOT_ACTION=""
 SNAPSHOT_TAG=""
-STATUSQUO=""
+STATUS_QUO=""
+USB_PASSTHOUGH=""
 VM=""
+
+readonly LAUNCHER=$(basename "${0}")
+readonly DISK_MIN_SIZE=$((197632 * 8))
+readonly QEMU="/snap/bin/qemu-virgil"
+readonly QEMU_IMG="/snap/bin/qemu-virgil.qemu-img"
+readonly VIRGIL_PATH="/snap/qemu-virgil/current"
 
 while [ $# -gt 0 ]; do
   case "${1}" in
-    -efi|--efi)
-      ENABLE_EFI=1
-      shift;;
     -delete|--delete)
       DELETE=1
       shift;;
@@ -313,10 +435,10 @@ while [ $# -gt 0 ]; do
       shift
       shift;;
     -status-quo|--status-quo)
-      STATUSQUO="-snapshot"
+      STATUS_QUO="-snapshot"
       shift;;
     -vm|--vm)
-      VM="$2"
+      VM="${2}"
       shift
       shift;;
     -h|--h|-help|--help)
@@ -334,7 +456,7 @@ if [ ! -e "${QEMU}" ] && [ ! -e "${QEMU_IMG}" ]; then
   exit 1
 fi
 
-if [ -n "${VM}" ] || [ -e "${VM}" ]; then
+if [ -n "${VM}" ] && [ -e "${VM}" ]; then
   source "${VM}"
   if [ -z "${disk_img}" ]; then
     echo "ERROR! No disk_img defined."
