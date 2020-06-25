@@ -92,8 +92,8 @@ function snapshot_info() {
 }
 
 function get_port() {
-    local PORT_START=22220
-    local PORT_RANGE=9
+    local PORT_START=$1
+    local PORT_RANGE=$2
     while true; do
         local CANDIDATE=$[${PORT_START} + (${RANDOM} % ${PORT_RANGE})]
         (echo "" >/dev/tcp/127.0.0.1/${CANDIDATE}) >/dev/null 2>&1
@@ -168,7 +168,7 @@ function vm_boot() {
   # Force to lowercase.
   boot=$(echo ${boot,,})
 
-  # A;ways Boot macOS using EFI
+  # Always Boot macOS using EFI
   if [ "${guest_os}" == "macos" ]; then
     boot="efi"
   fi
@@ -362,12 +362,18 @@ function vm_boot() {
   fi
 
   # Find a free port to expose ssh to the guest
-  local PORT=$(get_port)
+  local PORT=$(get_port 22220 9)
   if [ -n "${PORT}" ]; then
     NET="${NET},hostfwd=tcp::${PORT}-:22"
     echo " - ssh:      ${PORT}/tcp is connected. Login via 'ssh user@localhost -p ${PORT}'"
   else
     echo " - ssh:      All ports for exposing ssh have been exhausted."
+  fi
+
+  # Find a free port for spice
+  local SPICE_PORT=$(get_port 5930 9)
+  if [ ! -n "${SPICE_PORT}" ]; then
+    echo " - spice:      All spice ports have been exhausted."
   fi
 
   enable_usb_passthrough
@@ -438,7 +444,7 @@ function vm_boot() {
         -rtc base=localtime,clock=host \
         -object rng-random,id=rng0,filename=/dev/urandom \
         -device virtio-rng-pci,rng=rng0 \
-        -spice port=5930,disable-ticketing \
+        -spice port=${SPICE_PORT},disable-ticketing \
         -device virtio-serial-pci \
         -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 \
         -chardev spicevmc,id=spicechannel0,name=vdagent \
@@ -463,7 +469,7 @@ function vm_boot() {
       -rtc base=localtime,clock=host \
       -object rng-random,id=rng0,filename=/dev/urandom \
       -device virtio-rng-pci,rng=rng0 \
-      -spice port=5930,disable-ticketing \
+      -spice port=${SPICE_PORT},disable-ticketing \
       -device virtio-serial-pci \
       -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 \
       -chardev spicevmc,id=spicechannel0,name=vdagent \
@@ -501,6 +507,7 @@ function usage() {
   echo "  --snapshot delete <tag> : Delete a snapshot."
   echo "  --snapshot info         : Show disk/snapshot info."
   echo "  --status-quo            : Do not commit any changes to disk/snapshot."
+  echo "  --system-qemu           : Use system install of qemu."
   exit 1
 }
 
@@ -527,9 +534,9 @@ SHORTCUT=0
 
 readonly LAUNCHER=$(basename "${0}")
 readonly DISK_MIN_SIZE=$((197632 * 8))
-readonly QEMU="/snap/bin/qemu-virgil"
-readonly QEMU_IMG="/snap/bin/qemu-virgil.qemu-img"
-readonly VIRGIL_PATH="/snap/qemu-virgil/current"
+QEMU="/snap/bin/qemu-virgil"
+QEMU_IMG="/snap/bin/qemu-virgil.qemu-img"
+VIRGIL_PATH="/snap/qemu-virgil/current"
 
 while [ $# -gt 0 ]; do
   case "${1}" in
@@ -560,6 +567,9 @@ while [ $# -gt 0 ]; do
     -shortcut|--shortcut)
       SHORTCUT=1
       shift;;
+    -system-qemu|--system-qemu)
+      SYSTEM_QEMU=1
+      shift;;
     -h|--h|-help|--help)
       usage;;
     *)
@@ -568,11 +578,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Check we have qemu-virgil available
-if [ ! -e "${QEMU}" ] && [ ! -e "${QEMU_IMG}" ]; then
-  echo "ERROR! qemu-virgil not found. Please install the qemu-virgil snap."
-  echo "       https://snapcraft.io/qemu-virgil"
-  exit 1
+if [ -n "$SYSTEM_QEMU" ]; then
+  QEMU=$(which qemu-system-x86_64)
+  QEMU_IMG=$(which qemu-img)
+  VIRGIL_PATH=""
+  if [ ! -e "${QEMU}" ] && [ ! -e "${QEMU_IMG}" ]; then
+    echo "ERROR! qemu not found. Please install qemu."
+    exit 1
+  fi
+  echo "WARNING! using system install of qemu. Please make sure virgil is supported."
+else
+  # Check we have qemu-virgil available
+  if [ ! -e "${QEMU}" ] && [ ! -e "${QEMU_IMG}" ]; then
+    echo "ERROR! qemu-virgil not found. Please install the qemu-virgil snap."
+    echo "       https://snapcraft.io/qemu-virgil"
+    exit 1
+  fi
 fi
 
 if [ -n "${VM}" ] && [ -e "${VM}" ]; then
