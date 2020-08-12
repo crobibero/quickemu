@@ -6,7 +6,7 @@
 
 <p align="center"><b>Simple shell script to "manage" Qemu virtual machines.</b></p>
 <div align="center"><img src=".github/screenshot.png" alt="Quickemu Screenshot" /></div>
-<p align="center">Made with 💝 for <img src="https://raw.githubusercontent.com/anythingcodes/slack-emoji-for-techies/gh-pages/emoji/tux.png" align="top" width="24" /></p>
+<p align="center">Made with 💝 for <img src=".github/tux.png" align="top" width="18" /></p>
 
 ## Introduction
 
@@ -20,6 +20,10 @@ Quickemu is opinionated and will attempt to *"do the right thing"* rather than
 expose rich configuration options. Quickemu is a frontend to the fully
 accelerated [qemu-virgil](https://snapcraft.io/qemu-virgil). See the video
 where I explain some of my motivations for creating this script.
+
+We have a Discord for this project:
+
+  * <https://discord.gg/sNmz3uw>
 
 [![Replace VirtualBox with Bash & QEMU](https://img.youtube.com/vi/AOTYWEgw0hI/0.jpg)](https://www.youtube.com/watch?v=AOTYWEgw0hI)
 
@@ -36,6 +40,7 @@ and `qemu-virgil`  on the [Snap Store page for qemu-virgil](https://snapcraft.io
 
 ```bash
 snap install qemu-virgil --edge
+snap connect qemu-virgil:audio-record
 snap connect qemu-virgil:kvm
 snap connect qemu-virgil:raw-usb
 snap connect qemu-virgil:removable-media
@@ -56,6 +61,7 @@ guest_os="linux"
 iso="/media/$USER/Quickemu/ubuntu/focal-desktop-amd64.iso"
 disk_img="/media/$USER/Quickemu/ubuntu/focal-desktop-amd64.qcow2"
 disk=128G
+port_forwards=("8123:8123" "8888:80")
 usb_devices=("046d:082d" "046d:085e")
 ```
 
@@ -83,6 +89,9 @@ Starting /media/martin/Quickemu/ubuntu-focal-desktop.conf
  - Display:  SDL
  - smbd:     /home/martin will be exported to the guest via smb://10.0.2.4/qemu
  - ssh:      22221/tcp is connected. Login via 'ssh user@localhost -p 22221'
+ - PORTS:    Port forwards requested:
+              - 8123 => 8123
+              - 8888 => 80
  - USB:      Device pass-through requested:
               - Logitech, Inc. HD Pro Webcam C920
               - Logitech, Inc. Logitech BRIO
@@ -113,6 +122,7 @@ iso="/media/$USER/Quickemu/windows10/Win10_1909_English_x64.iso"
 driver_iso="/media/$USER/Quickemu/windows10/virtio-win-0.1.173.iso"
 disk_img="/media/$USER/Quickemu/windows10/windows10.qcow2"
 disk=128G
+port_forwards=("8123:8123" "8888:80")
 usb_devices=("046d:082d" "046d:085e")
 ```
 
@@ -142,6 +152,9 @@ Starting /media/martin/Quickemu/windows10.conf
  - Display:  SDL
  - smbd:     /home/martin will be exported to the guest via smb://10.0.2.4/qemu
  - ssh:      22221/tcp is connected. Login via 'ssh user@localhost -p 22221'
+ - PORTS:    Port forwards requested:
+              - 8123 => 8123
+              - 8888 => 80
  - USB:      Device pass-through requested:
               - Logitech, Inc. HD Pro Webcam C920
               - Logitech, Inc. Logitech BRIO
@@ -198,6 +211,7 @@ guest_os="macos"
 img="/media/$USER/Quickemu/macos/BaseSystem.img"
 disk_img="/media/$USER/Quickemu/macos/macos.qcow2"
 disk=128G
+port_forwards=("8123:8123" "8888:80")
 usb_devices=("046d:082d" "046d:085e")
 ```
 
@@ -225,6 +239,9 @@ Starting macos.conf
  - Display:  SDL
  - smbd:     /home/martin will be exported to the guest via smb://10.0.2.4/qemu
  - ssh:      22223/tcp is connected. Login via 'ssh user@localhost -p 22223'
+ - PORTS:    Port forwards requested:
+              - 8123 => 8123
+              - 8888 => 80
 ```
 
   * Boot from the BaseSystem
@@ -252,6 +269,7 @@ You can also pass optional parameters
   --snapshot delete <tag> : Delete a snapshot.
   --snapshot info         : Show disk/snapshot info.
   --status-quo            : Do not commit any changes to disk/snapshot.
+  --fullscreen            : Starts VM in full screen mode (Ctl+Alt+f to exit)"
 ```
 
 ## TODO
