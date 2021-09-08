@@ -17,33 +17,38 @@ distributions where the virtual machines can be stored anywhere, such as
 external USB storage.
 
 Quickemu is opinionated and will attempt to *"do the right thing"* rather than
-expose rich configuration options. Quickemu is a frontend to the fully
-accelerated [qemu-virgil](https://snapcraft.io/qemu-virgil). See the video
-where I explain some of my motivations for creating this script.
+expose rich configuration options. Quickemu is a wrapper for [QEMU](https://www.qemu.org/). See the video where I explain some of my motivations for creating this script.
 
-We have a Discord for this project:
-
-  * <https://discord.gg/sNmz3uw>
+We have a Discord for this project: [![Discord](https://img.shields.io/discord/712850672223125565?color=0C306A&label=WimpysWorld%20Discord&logo=Discord&logoColor=ffffff&style=flat-square)](https://discord.gg/sNmz3uw)
 
 [![Replace VirtualBox with Bash & QEMU](https://img.youtube.com/vi/AOTYWEgw0hI/0.jpg)](https://www.youtube.com/watch?v=AOTYWEgw0hI)
 
-## Installation
+## Requirements
 
-Clone this repository:
+Essential requirements:
 
-```
-git clone https://github.com/wimpysworld/quickemu.git
-```
+  * [QEMU](https://www.qemu.org/) 6.0.0 or newer
+  * [Coreutils](https://www.gnu.org/software/coreutils/)
+  * [procps](https://gitlab.com/procps-ng/procps)
+  * [usbutils](https://github.com/gregkh/usbutils)
+  * [Wget](https://www.gnu.org/software/wget/)
+  * [xrandr](https://gitlab.freedesktop.org/xorg/app/xrandr)
 
-Install the `qemu-virgil` snap. You can find details about how to install snapd
-and `qemu-virgil`  on the [Snap Store page for qemu-virgil](https://snapcraft.io/qemu-virgil)
+Optional requirements:
+
+  * `rot13` to *"decrypt"* the macOS OSK key; found in the `bsdgames` package in Debian/Ubuntu
+  * `smbd` to export user home directory from the host to the guest VM; found in the `samba` package in Debian/Ubuntu
+
+## Install Quickemu
+
+### Ubuntu
+
+Quickemu is available from a PPA for Ubuntu users. The Quickemu PPA also
+includes a back port of QEMU 6.0.0 for 20.04 (Focal) and 21.04 (Hirsute).
 
 ```bash
-snap install qemu-virgil --edge
-snap connect qemu-virgil:audio-record
-snap connect qemu-virgil:kvm
-snap connect qemu-virgil:raw-usb
-snap connect qemu-virgil:removable-media
+sudo apt-add-repository ppa:flexiondotorg/quickemu
+sudo apt install quickemu
 ```
 
 ## Usage
@@ -75,7 +80,7 @@ Which will output something like this:
 
 ```
 Starting /media/martin/Quickemu/ubuntu-focal-desktop.conf
- - QEMU:     /snap/bin/qemu-virgil v4.2.0
+ - QEMU:     /usr/bin/qemu-system-x86_64 v6.0.0
  - Guest:    Linux optimised
  - BIOS:     Legacy BIOS
  - Disk:     /media/martin/Quickemu/ubuntu/focal-desktop-amd64.qcow2 (64G)
@@ -136,7 +141,7 @@ Which will output something like this:
 
 ```
 Starting /media/martin/Quickemu/windows10.conf
- - QEMU:     /snap/bin/qemu-virgil v4.2.0
+ - QEMU:     /usr/bin/qemu-system-x86_64 v6.0.0
  - Guest:    Windows optimised
  - BIOS:     Legacy BIOS
  - Disk:     /media/martin/Quickemu/windows10/windows10.qcow2 (64G)
@@ -169,15 +174,6 @@ Starting /media/martin/Quickemu/windows10.conf
   * Post-install you should run the VirtIO installer from the CD-ROM: drive.
 
 ### macOS
-
-#### Optional extras for macOS
-
-If you want to run macOS then `quickemu` requires some additional utilities.
-`rot13` from `bsdgames` is used to *"decrypt"* the OSK key.
-
-```
-sudo apt install bsdgames wget
-```
 
 There are some considerations when running macOS via Quickemu.
 
@@ -225,7 +221,7 @@ Which will output something like this:
 
 ```
 Starting macos.conf
- - QEMU:     /snap/bin/qemu-virgil v4.2.0
+ - QEMU:     /usr/bin/qemu-system-x86_64 v6.0.0
  - BOOT:     EFI
  - Guest:    Macos optimised
  - Disk:     /media/martin/Quickemu/macos/macos.qcow2 (64G)
@@ -270,18 +266,11 @@ You can also pass optional parameters
   --snapshot info         : Show disk/snapshot info.
   --status-quo            : Do not commit any changes to disk/snapshot.
   --fullscreen            : Starts VM in full screen mode (Ctl+Alt+f to exit)"
+  --no-smb                : Do not expose the home directory via SMB.
 ```
 
 ## TODO
 
-  - [x] Create desktop launcher for a VM
+  - [ ] SPICE support
   - [ ] Improve disk management
-  - [x] Add USB pass-through support
-  - [x] Fix Virgil 3D on EFI boot
-  - [x] Add Windows support
-  - [x] Get QEMU `-audiodev` working for audio input
-  - [x] Make display configuration more robust
-  - [x] Improve snapshot management
-  - [x] Improve stdout presentation
-  - [x] Make disk image size configurable
-  - [ ] [Add Faux OEM](# https://code.launchpad.net/~ubuntu-installer/ubiquity/+git/ubiquity/+merge/379899)
+  - [ ] [Add Faux OEM](https://code.launchpad.net/~ubuntu-installer/ubiquity/+git/ubiquity/+merge/379899)
